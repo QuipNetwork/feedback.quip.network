@@ -1,0 +1,8 @@
+# Filled specs carry the Postgres password, SECRET_KEY, the Storj keys and the
+# Proton SMTP token.
+# This repo is public — never commit them.
+*.filled.json
+.env
+
+# Internal deployment notes. Not published.
+docs/

@@ -1,0 +1,100 @@
+{
+  "version": 8,
+  "name": "quipfeedback",
+  "description": "Quackback feedback board: posts, upvotes, roadmap, changelog.",
+  "owner": "1H18UuAxugZihfoagL8xNT1Rpxn55dZtZ3",
+  "compose": [
+    {
+      "name": "app",
+      "description": "Quackback web + worker. Migrates at startup. v1: anonymous board, no OAuth.",
+      "repotag": "ghcr.io/quackbackio/quackback:0.13.2@sha256:910a36e6623b862b46f1321bec5900dfb7673a689e6cba57368bbc81d03e209a",
+      "ports": [
+        3000
+      ],
+      "domains": [
+        "feedback.quip.network"
+      ],
+      "environmentParameters": [
+        "BASE_URL=https://feedback.quip.network",
+        "DATABASE_URL=postgresql://quackback:<pg-password-hex>@fluxpostgres_quipfeedback:5432/quackback",
+        "REDIS_URL=redis://fluxdragonfly_quipfeedback:6379",
+        "SECRET_KEY=<openssl-rand-hex-32>",
+        "S3_ENDPOINT=https://gateway.storjshare.io",
+        "S3_BUCKET=feedback-uploads",
+        "S3_REGION=us-east-1",
+        "S3_ACCESS_KEY_ID=<storj-UPLOADS-access-key>",
+        "S3_SECRET_ACCESS_KEY=<storj-UPLOADS-secret-key>",
+        "S3_FORCE_PATH_STYLE=true",
+        "S3_PROXY=true",
+        "DISABLE_TELEMETRY=true",
+        "EMAIL_SMTP_HOST=smtp.protonmail.ch",
+        "EMAIL_SMTP_PORT=587",
+        "EMAIL_SMTP_USER=no-reply@quip.network",
+        "EMAIL_SMTP_PASS=<proton-smtp-token-for-no-reply>",
+        "EMAIL_FROM=Quip Feedback <no-reply@quip.network>"
+      ],
+      "commands": [],
+      "containerPorts": [
+        3000
+      ],
+      "containerData": "/tmp",
+      "cpu": 1,
+      "ram": 2048,
+      "hdd": 1,
+      "repoauth": ""
+    },
+    {
+      "name": "postgres",
+      "description": "Postgres 18 + pgvector. Restores its newest S3 dump on a fresh volume.",
+      "repotag": "registry.gitlab.com/quip.network/feedback.quip.network:pg18-8ffa2d0-amd64@sha256:269e40cc478d9c62638908095686c3093901c98cbe944e715bad8ab691cd761d",
+      "ports": [],
+      "domains": [],
+      "environmentParameters": [
+        "POSTGRES_USER=quackback",
+        "POSTGRES_PASSWORD=<pg-password-hex>",
+        "POSTGRES_DB=quackback",
+        "S3_ENDPOINT=https://gateway.storjshare.io",
+        "S3_BUCKET=feedback-db",
+        "S3_ACCESS_KEY=<storj-DB-access-key>",
+        "S3_SECRET_KEY=<storj-DB-secret-key>",
+        "S3_PREFIX=feedback-pg/",
+        "DUMP_INTERVAL_SECONDS=900",
+        "DUMP_KEEP=48"
+      ],
+      "commands": [],
+      "containerPorts": [],
+      "containerData": "/var/lib/postgresql",
+      "cpu": 0.75,
+      "ram": 1500,
+      "hdd": 10,
+      "repoauth": ""
+    },
+    {
+      "name": "dragonfly",
+      "description": "Dragonfly for the BullMQ queue. Upstream's image, version and flags.",
+      "repotag": "docker.dragonflydb.io/dragonflydb/dragonfly:v1.27.1@sha256:4a4803ab8ef2cd62d2e38ee3fd7500e5393373e6f2f77808b7566642f514efbf",
+      "ports": [],
+      "domains": [],
+      "environmentParameters": [],
+      "commands": [
+        "dragonfly",
+        "--cluster_mode=emulated",
+        "--lock_on_hashtags"
+      ],
+      "containerPorts": [],
+      "containerData": "/data",
+      "cpu": 0.5,
+      "ram": 1024,
+      "hdd": 1,
+      "repoauth": ""
+    }
+  ],
+  "instances": 1,
+  "contacts": [],
+  "geolocation": [
+    "acNA"
+  ],
+  "nodes": [],
+  "staticip": true,
+  "enterprise": "<set-by-the-dashboard-Enterprise-toggle-at-submit>"
+}
