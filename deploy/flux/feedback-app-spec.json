@@ -7,7 +7,7 @@
     {
       "name": "app",
       "description": "Quackback web + worker. Migrates at startup. v1: anonymous board, no OAuth.",
-      "repotag": "ghcr.io/quackbackio/quackback:0.13.2@sha256:910a36e6623b862b46f1321bec5900dfb7673a689e6cba57368bbc81d03e209a",
+      "repotag": "ghcr.io/quackbackio/quackback:0.13.2@sha256:63660c1b32f2b841fb99e2502622b602cd08f49d2250c75fdac7aae1c7c2c151",
       "ports": [
         3000
       ],
@@ -72,14 +72,15 @@
     {
       "name": "dragonfly",
       "description": "Dragonfly for the BullMQ queue. Upstream's image, version and flags.",
-      "repotag": "docker.dragonflydb.io/dragonflydb/dragonfly:v1.27.1@sha256:4a4803ab8ef2cd62d2e38ee3fd7500e5393373e6f2f77808b7566642f514efbf",
+      "repotag": "docker.dragonflydb.io/dragonflydb/dragonfly:v1.27.1@sha256:e1bdd6ff1ed32efdfb5a07ddf954689a3d69791ae905a1f2197d8aa381ef8e7c",
       "ports": [],
       "domains": [],
       "environmentParameters": [],
       "commands": [
         "dragonfly",
         "--cluster_mode=emulated",
-        "--lock_on_hashtags"
+        "--lock_on_hashtags",
+        "--dbfilename="
       ],
       "containerPorts": [],
       "containerData": "/data",
