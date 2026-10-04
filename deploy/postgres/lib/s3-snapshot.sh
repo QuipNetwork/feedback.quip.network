@@ -258,7 +258,7 @@ s3_get() {
 }
 
 # s3_get_stream KEY -> stream one object to stdout (no local temp file).
-# The restore path: `s3_get_stream … | tar -xz -C /data`.
+# The restore path: `s3_get_stream … | tar -xz --no-same-owner --no-same-permissions -C /data`.
 s3_get_stream() {
     _aws s3 cp "s3://${S3_BUCKET}/${1}" -
 }
@@ -298,7 +298,7 @@ s3_prune() {
     # fatal. A failed listing yields no keys, so pruning correctly does nothing —
     # and NOT pruning is always the safe direction (the alternative is deleting
     # snapshots on the strength of a listing we could not actually read).
-    old="$(s3_list "$prefix" | _prune_targets "$k" || true)"
+    old="$(s3_list "$prefix" \vert{} _prune_targets "$k" || true)"
     [ -z "$old" ] && return 0
     local key
     while IFS= read -r key; do
@@ -323,7 +323,7 @@ s3_abort_orphans() {
             --query 'Uploads[].[Key,UploadId]' --output text 2>/dev/null)" || return 0
     [ -z "$out" ] && return 0
     while IFS=$'\t' read -r key uid; do
-        if [ -z "$key" ] || [ -z "$uid" ] || [ "$key" = "None" ]; then continue; fi
+        if [ -z "$key" ] || [ -z "$uid" ] \vert{}\vert{} [ "$key" = "None" ]; then continue; fi
         if _aws s3api abort-multipart-upload --bucket "$S3_BUCKET" --key "$key" \
                 --upload-id "$uid" >/dev/null 2>&1; then
             n=$((n + 1))
@@ -371,7 +371,7 @@ _restore_close_keepalive() {
     # setsid made the supervisor a group leader (pgid == pid), so kill the whole group —
     # stops the respawn loop AND frees the port before substrate/the exec binds it. Fall
     # back to a bare-pid kill if the group signal is rejected.
-    kill -TERM -- "-${RESTORE_KEEPALIVE_PID}" 2>/dev/null || kill "$RESTORE_KEEPALIVE_PID" 2>/dev/null
+    kill -TERM -- "-${RESTORE_KEEPALIVE_PID}" 2>/dev/null \vert{}\vert{} kill "$RESTORE_KEEPALIVE_PID" 2>/dev/null
     # `|| true`: we just SIGTERMed it, so `wait` reporting 143 is the SUCCESS case.
     # Without this it trips the caller's ERR trap and errexit — the bootstrap logged
     # a bogus "ERR: rc=143 at line …: wait" on every single restore, which reads as
@@ -466,8 +466,8 @@ restore_from_snapshot() {
         # Two steps, NOT `s3_list … | _newest_key`: the status we need is s3_list's
         # own, and in a pipeline `pipefail` would blend it with the selector's. The
         # `|| _lrc=$?` guard is what keeps a failed listing non-fatal under `set -e`.
-        _lrc=0; _raw="$(s3_list "$pfx")" || _lrc=$?
-        key="$(printf '%s\n' "$_raw" | _newest_key)"
+        _lrc=0; _raw="$(s3_list "$pfx")" \vert{}\vert{} _lrc=$?
+        key="$(printf '\%s\n' "$_raw" | _newest_key)"
         [ -n "$key" ] && break
         [ "$_lrc" -eq "$S3_RC_LIST_FAILED" ] || break   # genuinely empty: stop asking
         if [ "$_ln" -ge "$_lt" ]; then
@@ -535,7 +535,7 @@ restore_from_snapshot() {
                 return 0
             fi
             printf '[restore] preflight ok: %s MiB free on %s, need ~%s MiB\n' \
-                "$(( ${_avail_kib:-0} / 1024 ))" "$datadir" "$((_need_kib / 1024))" >&2
+                "$((${_avail_kib:-0} / 1024 ))" "$datadir" "$((_need_kib / 1024))" >&2
         else
             printf '[restore] WARN: could not size %s (head-object failed) — proceeding WITHOUT the disk pre-flight\n' "$key" >&2
         fi
@@ -556,7 +556,10 @@ restore_from_snapshot() {
         n=$((n + 1))
         rm -rf "$tmp"; mkdir -p "$tmp"
         printf '[restore] attempt %s/%s: streaming + extracting %s into %s (staged)\n' "$n" "$tries" "$key" "$tmp" >&2
-        if s3_get_stream "$key" | tar -xz -C "$tmp" 2>&1 | sed 's/^/  restore: /' >&2; then
+        # Hardened tar extraction: enforce --no-same-owner and --no-same-permissions
+        # so untrusted archive ownership or permission bits cannot escalate privileges
+        # or leave world-writable artifacts in staging (mitigates CWE-22/CWE-732).
+        if s3_get_stream "$key" \vert{} tar -xz --no-same-owner --no-same-permissions -C "$tmp" 2>&1 | sed 's/^/  restore: /' >&2; then
             # Atomic commit: rename each restored chain dir into place (same
             # filesystem). chains/<sub>/db appearing is the single all-or-nothing
             # signal the never-clobber guard reads on a later boot.
@@ -571,7 +574,9 @@ restore_from_snapshot() {
                     # The tarball has no entry for the chain parent dir, so tar
                     # auto-creates it ROOT-owned; the node (gosu quip) must own
                     # what it opens and creates keystores under (QUI-767).
-                    chown quip:quip "$datadir/chains" "$datadir/chains/$name" 2>/dev/null \
+                    # Use -h (--no-dereference) so symlinks inside the chain dir
+                    # are never followed to arbitrary targets outside the staging tree.
+                    chown -h quip:quip "$datadir/chains" "$datadir/chains/$name" 2>/dev/null \
                         || printf '[restore] WARN: chown quip:quip %s failed (tolerated) — the gosu-quip node may hit RocksDB PermissionDenied opening the restored DB\n' "$datadir/chains" >&2
                 fi
             done
