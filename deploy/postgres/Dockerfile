@@ -43,9 +43,26 @@
 # hard-refuses to start if it finds a mount at the legacy path.
 FROM pgvector/pgvector:pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a
 
+# ⚠ This container holds the Storj database key, so its trust store must not
+# accept the forged eMudhra chain. Two copies have to be fixed:
+#
+#   - The OS bundle. ca-certificates 20250419~deb12u1 holds both emSign ECC
+#     Root CA - G3 and AAA Certificate Services (which cross-signed the bad
+#     intermediates). The fixed 20250419~deb12u2 comes from bookworm-security,
+#     which the base image's sources already list, so naming the package here
+#     picks it up. The assert refuses the build if the file still holds
+#     either root -- apt exits 0 when there is nothing newer to install.
+#   - aws-cli's own. Debian's awscli 2.9.19 verifies with botocore's
+#     cacert.pem, not the OS bundle, and that file still trusts AAA.
+#     AWS_CA_BUNDLE points it at the fixed bundle. The restore hook and the
+#     dump loop both inherit it.
+COPY --from=trust-store assert-fixed-bundle.sh /tmp/assert-fixed-bundle.sh
 RUN apt-get update \
     && apt-get install -y --no-install-recommends awscli ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && sh /tmp/assert-fixed-bundle.sh /etc/ssl/certs/ca-certificates.crt \
+    && rm /tmp/assert-fixed-bundle.sh
+ENV AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 # Store-agnostic S3 helpers, vendored BYTE-IDENTICAL from
 # bootnodes.quip.network/lib/ so the two stay one file, not a fork. Functions

@@ -7,8 +7,13 @@
 # This repo has NO CI, so this is the whole release path -- keep it runnable by
 # hand and keep it honest about what it produced.
 #
-#   ./deploy/postgres/build-and-push.sh            # build + push + print repotag
-#   NO_PUSH=1 ./deploy/postgres/build-and-push.sh  # build only
+#   ./deploy/postgres/build-and-push.sh              # build + push + print repotag
+#   NO_PUSH=1 ./deploy/postgres/build-and-push.sh    # build only
+#   PUSH_ONLY=1 ./deploy/postgres/build-and-push.sh  # push the tag NO_PUSH built
+#
+# ⚠ Test the NO_PUSH image, then push THAT tag with PUSH_ONLY. Do not rebuild in
+# between: with the containerd image store every build makes a new image ID,
+# even fully cached, so a rebuild ships something you have not tested.
 #
 # Requires: docker login registry.gitlab.com  (PAT with write_registry; the
 # glab OAuth token does NOT work for the registry -- API scope only).
@@ -26,7 +31,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 SHA="$(git rev-parse --short HEAD)"
 DIRTY=""
-git diff --quiet HEAD -- . || DIRTY="-dirty"
+git diff --quiet HEAD -- . ../trust-store || DIRTY="-dirty"
 TAG="${TAG:-pg18-${SHA}${DIRTY}-amd64}"
 IMAGE="${REGISTRY}/${REPO}:${TAG}"
 
@@ -34,13 +39,22 @@ if [ -n "$DIRTY" ]; then
     echo "⚠ working tree is dirty -- tagging '${TAG}'. Commit before a real release." >&2
 fi
 
-echo "==> building ${IMAGE}"
-docker build \
-    --platform linux/amd64 \
-    --provenance=false \
-    --sbom=false \
-    -t "$IMAGE" \
-    .
+if [ -n "${PUSH_ONLY:-}" ]; then
+    docker image inspect "$IMAGE" >/dev/null 2>&1 \
+        || { echo "FATAL: PUSH_ONLY set but ${IMAGE} is not built locally" >&2; exit 1; }
+    echo "==> PUSH_ONLY set -- re-checking the local ${IMAGE}, not rebuilding"
+else
+    echo "==> building ${IMAGE}"
+    # The trust-store assert lives outside this directory so the app image can
+    # share it; --build-context hands it in without widening the main context.
+    docker build \
+        --platform linux/amd64 \
+        --provenance=false \
+        --sbom=false \
+        --build-context trust-store=../trust-store \
+        -t "$IMAGE" \
+        .
+fi
 
 # Assert the positive: a wrong-arch image would deploy and then crash-loop on a
 # Flux node, which is a slow and confusing way to find this out.
@@ -55,8 +69,9 @@ docker run --rm --entrypoint sh "$IMAGE" -c '
     [ -x /docker-entrypoint-initdb.d/10-restore-on-boot.sh ] || { echo "FATAL: restore hook missing"; exit 1; }
     [ -x /usr/local/bin/dump-loop.sh ] || { echo "FATAL: dump loop missing"; exit 1; }
     command -v aws >/dev/null || { echo "FATAL: awscli missing"; exit 1; }
+    [ "$AWS_CA_BUNDLE" = "/etc/ssl/certs/ca-certificates.crt" ] || { echo "FATAL: AWS_CA_BUNDLE=$AWS_CA_BUNDLE"; exit 1; }
 ' || exit 1
-echo "    ok: amd64, PGDATA=/var/lib/postgresql/18/docker, restore hook + dump loop + awscli present"
+echo "    ok: amd64, PGDATA=/var/lib/postgresql/18/docker, restore hook + dump loop + awscli present, AWS_CA_BUNDLE set"
 
 if [ -n "${NO_PUSH:-}" ]; then
     echo "==> NO_PUSH set -- stopping before push"
