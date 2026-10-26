@@ -7,7 +7,7 @@
     {
       "name": "app",
       "description": "Quackback web + worker. Migrates at startup. v1: anonymous board, no OAuth.",
-      "repotag": "ghcr.io/quackbackio/quackback:0.13.2@sha256:63660c1b32f2b841fb99e2502622b602cd08f49d2250c75fdac7aae1c7c2c151",
+      "repotag": "registry.gitlab.com/quip.network/feedback.quip.network:quackback-0.13.2-bun1.4.4-a960363-amd64@sha256:cd0b7998c407f0beefc676f5e4420a59243daa69b2136c15f6b9f9fd0b6706f1",
       "ports": [
         3000
       ],
@@ -46,7 +46,7 @@
     {
       "name": "postgres",
       "description": "Postgres 18 + pgvector. Restores its newest S3 dump on a fresh volume.",
-      "repotag": "registry.gitlab.com/quip.network/feedback.quip.network:pg18-8ffa2d0-amd64@sha256:269e40cc478d9c62638908095686c3093901c98cbe944e715bad8ab691cd761d",
+      "repotag": "registry.gitlab.com/quip.network/feedback.quip.network:pg18-a960363-amd64@sha256:3ee7ec28d7aaea40b28c1148c94f5b111baf525b71ced4bbd41feafc1c41a707",
       "ports": [],
       "domains": [],
       "environmentParameters": [
