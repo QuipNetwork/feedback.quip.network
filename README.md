@@ -15,7 +15,7 @@ Upstream's `docker-compose.prod.yml` translated to three Flux components:
 
 | Component | Image | Purpose |
 |---|---|---|
-| `app` | `ghcr.io/quackbackio/quackback` | Web and worker. Runs database migrations at startup. |
+| `app` | built from `deploy/app/` | Upstream's Quackback image with a fixed CA bundle and Bun runtime. Web and worker; runs database migrations at startup. |
 | `postgres` | built from `deploy/postgres/` | PostgreSQL 18 with pgvector, wrapped with a dump loop and a restore-on-boot hook. |
 | `dragonfly` | `docker.dragonflydb.io/dragonflydb/dragonfly` | Redis-compatible store backing the BullMQ queue. |
 
@@ -28,7 +28,9 @@ Storj on a fixed interval and restores the most recent dump whenever it starts o
 ## Repository layout
 
     deploy/flux/feedback-app-spec.json   Flux v8 app specification; secrets are placeholders
+    deploy/app/                          App image: upstream Quackback on a fixed trust store
     deploy/postgres/                     Postgres image: Dockerfile, entrypoint, dump loop, restore hook
+    deploy/trust-store/                  Build-time check that a CA bundle has dropped the eMudhra roots
 
 ## Prerequisites
 
@@ -40,16 +42,25 @@ Storj on a fixed interval and restores the most recent dump whenever it starts o
 
 ## Build
 
-The Postgres image is built and pushed by hand; this repository has no CI.
+Both images are built and pushed by hand; this repository has no CI.
 
 ```bash
 docker login registry.gitlab.com
-./deploy/postgres/build-and-push.sh
+NO_PUSH=1 ./deploy/app/build-and-push.sh        # build, then test the local image
+PUSH_ONLY=1 ./deploy/app/build-and-push.sh      # push that same image
+NO_PUSH=1 ./deploy/postgres/build-and-push.sh
+PUSH_ONLY=1 ./deploy/postgres/build-and-push.sh
 ```
 
-The script builds `linux/amd64`, checks the image layout, pushes to
+Each script builds `linux/amd64`, checks the image, pushes to
 `registry.gitlab.com/quip.network/feedback.quip.network` and prints the digest-pinned repotag to
-paste into the specification.
+paste into the specification. Push the image you tested rather than rebuilding it, and never push a
+tag twice: Flux redeploys whenever a tag's digest changes.
+
+The `app` image is upstream's, with two changes: the Alpine CA bundle is upgraded, and the Bun
+runtime is replaced with a release whose built-in root list no longer trusts the eMudhra roots.
+Both builds refuse a CA bundle that still holds them. Drop the `app` image once an upstream
+release ships on a fixed Bun.
 
 ## Deploy
 
