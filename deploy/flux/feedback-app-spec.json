@@ -29,9 +29,9 @@
         "DISABLE_TELEMETRY=true",
         "EMAIL_SMTP_HOST=smtp.protonmail.ch",
         "EMAIL_SMTP_PORT=587",
-        "EMAIL_SMTP_USER=no-reply@quip.network",
-        "EMAIL_SMTP_PASS=<proton-smtp-token-for-no-reply>",
-        "EMAIL_FROM=Quip Feedback <no-reply@quip.network>"
+        "EMAIL_SMTP_USER=no-reply-feedback@quip.network",
+        "EMAIL_SMTP_PASS=<proton-smtp-token-for-no-reply-feedback>",
+        "EMAIL_FROM=Quip Feedback <no-reply-feedback@quip.network>"
       ],
       "commands": [],
       "containerPorts": [
