@@ -2,12 +2,12 @@
   "version": 8,
   "name": "quipfeedback",
   "description": "Quackback feedback board: posts, upvotes, roadmap, changelog.",
-  "owner": "1H18UuAxugZihfoagL8xNT1Rpxn55dZtZ3",
+  "owner": "12GPYvyYudAA4RxdU4ogNHZfYF64aQnaZV",
   "compose": [
     {
       "name": "app",
-      "description": "Quackback web + worker. Migrates at startup. v1: anonymous board, no OAuth.",
-      "repotag": "registry.gitlab.com/quip.network/feedback.quip.network:quackback-0.13.2-bun1.4.4-a960363-amd64@sha256:cd0b7998c407f0beefc676f5e4420a59243daa69b2136c15f6b9f9fd0b6706f1",
+      "description": "Quackback web + worker. Migrates at startup. v1: anonymous board, no email/OAuth.",
+      "repotag": "registry.gitlab.com/quip.network/feedback.quip.network:quackback-0.16.0-bun1.4.4-92fadfe-amd64@sha256:0992e4ede9f213b267165f41784ba876d7c398db5f96d920e9768154d00c8d06",
       "ports": [
         3000
       ],
@@ -17,7 +17,6 @@
       "environmentParameters": [
         "BASE_URL=https://feedback.quip.network",
         "DATABASE_URL=postgresql://quackback:<pg-password-hex>@fluxpostgres_quipfeedback:5432/quackback",
-        "REDIS_URL=redis://fluxdragonfly_quipfeedback:6379",
         "SECRET_KEY=<openssl-rand-hex-32>",
         "S3_ENDPOINT=https://gateway.storjshare.io",
         "S3_BUCKET=feedback-uploads",
@@ -31,7 +30,8 @@
         "EMAIL_SMTP_PORT=587",
         "EMAIL_SMTP_USER=no-reply-feedback@quip.network",
         "EMAIL_SMTP_PASS=<proton-smtp-token-for-no-reply-feedback>",
-        "EMAIL_FROM=Quip Feedback <no-reply-feedback@quip.network>"
+        "EMAIL_FROM=Quip Feedback <no-reply-feedback@quip.network>",
+        "TRUSTED_PROXY_HOPS=1"
       ],
       "commands": [],
       "containerPorts": [
@@ -64,36 +64,16 @@
       "commands": [],
       "containerPorts": [],
       "containerData": "/var/lib/postgresql",
-      "cpu": 0.75,
+      "cpu": 0.8,
       "ram": 1500,
       "hdd": 10,
-      "repoauth": ""
-    },
-    {
-      "name": "dragonfly",
-      "description": "Dragonfly for the BullMQ queue. Upstream's image, version and flags.",
-      "repotag": "docker.dragonflydb.io/dragonflydb/dragonfly:v1.27.1@sha256:e1bdd6ff1ed32efdfb5a07ddf954689a3d69791ae905a1f2197d8aa381ef8e7c",
-      "ports": [],
-      "domains": [],
-      "environmentParameters": [],
-      "commands": [
-        "dragonfly",
-        "--cluster_mode=emulated",
-        "--lock_on_hashtags",
-        "--dbfilename="
-      ],
-      "containerPorts": [],
-      "containerData": "/data",
-      "cpu": 0.5,
-      "ram": 1024,
-      "hdd": 1,
       "repoauth": ""
     }
   ],
   "instances": 1,
   "contacts": [],
   "geolocation": [
-    "acNA"
+    "a!cEU_RU"
   ],
   "nodes": [],
   "staticip": true,

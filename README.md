@@ -11,15 +11,16 @@ Live at **https://feedback.quip.network**.
 
 ## Architecture
 
-Upstream's `docker-compose.prod.yml` translated to three Flux components:
+Upstream's `docker-compose.prod.yml` translated to two Flux components:
 
 | Component | Image | Purpose |
 |---|---|---|
-| `app` | built from `deploy/app/` | Upstream's Quackback image with a fixed CA bundle and Bun runtime. Web and worker; runs database migrations at startup. |
+| `app` | built from `deploy/app/` | Upstream's Quackback image with a fixed CA bundle and Bun runtime. Web and background jobs; runs database migrations at startup. |
 | `postgres` | built from `deploy/postgres/` | PostgreSQL 18 with pgvector, wrapped with a dump loop and a restore-on-boot hook. |
-| `dragonfly` | `docker.dragonflydb.io/dragonflydb/dragonfly` | Redis-compatible store backing the BullMQ queue. |
 
-Upstream's `minio` and `minio-init` services are dropped; `S3_*` points at Storj instead, using two
+Since Quackback 0.14, background jobs run on Postgres, so there is no Redis or Dragonfly component.
+
+Upstream's bundled object storage is dropped; `S3_*` points at Storj instead, using two
 buckets — one for user uploads, one for database dumps.
 
 A Flux volume does not survive relocation to another node, so the `postgres` component dumps to
@@ -91,8 +92,8 @@ Set on the `app` component. Flux caps a component at 20 environment variables; t
 |---|---|
 | `BASE_URL` | Public URL of the board |
 | `DATABASE_URL` | The password is interpolated in, so it must be URL-safe |
-| `REDIS_URL` | Required |
-| `SECRET_KEY` | `openssl rand -hex 32` |
+| `SECRET_KEY` | `openssl rand -hex 32`. It also encrypts the OAuth and integration credentials stored in the database, so it must never change |
+| `TRUSTED_PROXY_HOPS` | `1`. FDM appends the client address to `X-Forwarded-For`, and Quackback takes it from there for rate limits and session IPs. At `0` every visitor shares one rate-limit bucket, sign-in included |
 | `S3_*` | Storj gateway, the uploads bucket and its key |
 | `EMAIL_SMTP_*`, `EMAIL_FROM` | Transactional mail — password resets, invitations, notifications |
 | `DISABLE_TELEMETRY` | Turns off upstream's anonymous usage ping |
@@ -108,6 +109,17 @@ The `postgres` component takes `POSTGRES_*`, the Storj database-bucket keys, `S3
 - **Upgrades** are a `repotag` change. Confirm a fresh dump has published, then bump the tag and
   digest and update the specification. Migrations run on boot, so read the release notes and upgrade
   one version at a time.
+  - Migrations are not reversible. A rollback is the previous image plus a restore of the last
+    pre-upgrade dump onto an empty volume.
+  - Removing or adding a component makes Flux charge a small update fee and reinstall the app.
+    Postgres then restores the newest dump, so anything written after that dump is lost.
+  - After an upgrade, look at the rendered portal, not only its status codes. The 0.16 header
+    change hid the whole header behind one of our custom CSS rules.
+- **Health:** `/api/health/ready` (0.16 and later) checks the database. `/api/health` answers 200
+  even when the database is unreachable.
+- **Custom CSS** lives in the database: Admin → Settings → Portal → Customise → Advanced CSS. Edit
+  it there, not in SQL, because the app serves it from a cache. Publishing from that editor moves
+  theme colours, fonts and radius into its own Colours and Font settings.
 - **Environment changes** need a Soft Reinstall rather than a Restart. Both preserve the volume.
 - **Never edit `hdd` on a live app** — it forces a hard redeploy, which wipes the volume.
 - **Backups** run inside the `postgres` component to Storj, governed by `DUMP_INTERVAL_SECONDS` and
