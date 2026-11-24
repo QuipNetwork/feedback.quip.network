@@ -26,7 +26,7 @@ REPO="${REPO:-quip.network/feedback.quip.network}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # What the Dockerfile pins. The assertions below check the built image matches.
-QUACKBACK_VERSION="0.13.2"
+QUACKBACK_VERSION="0.16.0"
 BUN_VERSION="1.4.4"
 
 cd "$HERE"
