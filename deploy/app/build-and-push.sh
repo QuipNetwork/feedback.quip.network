@@ -26,10 +26,13 @@ REPO="${REPO:-quip.network/feedback.quip.network}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # What the Dockerfile pins. The assertions below check the built image matches.
-QUACKBACK_VERSION="0.16.0"
+# Quackback's version is read from the FROM line, so an upgrade edits one place
+# (and deploy/local/canary.sh can build on a newer release by swapping that line).
 BUN_VERSION="1.4.4"
 
 cd "$HERE"
+QUACKBACK_VERSION="$(sed -n 's|^FROM ghcr.io/quackbackio/quackback:\([^@ ]*\).*|\1|p' Dockerfile)"
+[ -n "$QUACKBACK_VERSION" ] || { echo "FATAL: no 'FROM ghcr.io/quackbackio/quackback:<tag>' line in deploy/app/Dockerfile" >&2; exit 1; }
 SHA="$(git rev-parse --short HEAD)"
 DIRTY=""
 git diff --quiet HEAD -- . ../trust-store || DIRTY="-dirty"

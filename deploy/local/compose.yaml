@@ -1,0 +1,128 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Local rehearsal of the quipfeedback Flux app, and the stack the weekly canary
+# boots (deploy/local/canary.sh). Start it with deploy/local/up.sh.
+#
+# Faithful where it matters for the deploy:
+#   - service names are Flux's inter-component names (flux<component>_<app>),
+#     so DATABASE_URL's host is exercised as-is
+#   - each component's environment mirrors deploy/flux/feedback-app-spec.json,
+#     with stand-ins only where the spec points at Storj or Proton
+#   - mem_limit equals each component's Flux ram, the data paths are the
+#     spec's containerData, and restart: always is FluxOS's policy
+#   - app and postgres sit on an internal network with NO egress, so a
+#     phone-home attempt fails loudly in the logs instead of succeeding
+# Stand-ins: SeaweedFS (service "minio") for Storj -- the uploads bucket AND
+# the dump bucket, so postgres's dump loop and restore-on-boot really run --
+# and Mailpit for Proton SMTP. The edge only forwards 127.0.0.1:3000 to the app
+# for a browser on this machine; it is not FDM.
+
+name: feedback-rehearsal
+
+services:
+  fluxapp_quipfeedback:
+    image: ${APP_IMAGE:?run deploy/local/up.sh}
+    environment:
+      BASE_URL: http://localhost:3000
+      DATABASE_URL: postgresql://quackback:${PG_PASSWORD:?}@fluxpostgres_quipfeedback:5432/quackback
+      SECRET_KEY: ${SECRET_KEY:?}
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: feedback-uploads
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ${MINIO_USER:?}
+      S3_SECRET_ACCESS_KEY: ${MINIO_PASSWORD:?}
+      S3_FORCE_PATH_STYLE: "true"
+      S3_PROXY: "true"
+      DISABLE_TELEMETRY: "true"
+      EMAIL_SMTP_HOST: mailpit
+      EMAIL_SMTP_PORT: "1025"
+      EMAIL_SMTP_USER: no-reply-feedback@quip.network
+      EMAIL_SMTP_PASS: rehearsal-not-a-secret
+      EMAIL_FROM: Quip Feedback <no-reply-feedback@quip.network>
+      TRUSTED_PROXY_HOPS: "1"
+    volumes: [apptmp:/tmp]
+    depends_on: [fluxpostgres_quipfeedback, minio-init]
+    mem_limit: 2048m
+    networks: [backend]
+    restart: always   # FluxOS's policy for every component
+
+  fluxpostgres_quipfeedback:
+    image: ${PG_IMAGE:?run deploy/local/up.sh}
+    environment:
+      POSTGRES_USER: quackback
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?}
+      POSTGRES_DB: quackback
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: feedback-db
+      S3_ACCESS_KEY: ${MINIO_USER:?}
+      S3_SECRET_KEY: ${MINIO_PASSWORD:?}
+      S3_PREFIX: feedback-pg/
+      # The spec dumps every 900 s; the canary sets this low so a dump of the
+      # migrated schema exists within a minute.
+      DUMP_INTERVAL_SECONDS: ${DUMP_INTERVAL_SECONDS:-900}
+      DUMP_KEEP: "48"
+    volumes: [pgdata:/var/lib/postgresql]
+    depends_on: [minio-init]
+    mem_limit: 1500m
+    networks: [backend]
+    restart: always   # FluxOS's policy for every component
+
+  minio:
+    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
+    entrypoint: [/bin/sh, -c]
+    command:
+      - |
+        umask 077
+        printf '{"identities":[{"name":"rehearsal","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$MINIO_USER" "$$MINIO_PASSWORD" > /tmp/s3.json
+        exec weed server -dir=/data -ip=minio -ip.bind=0.0.0.0 -volume.max=40 -master.volumeSizeLimitMB=256 -master.telemetry=false -s3 -s3.port=9000 -s3.config=/tmp/s3.json
+    environment:
+      MINIO_USER: ${MINIO_USER:?}
+      MINIO_PASSWORD: ${MINIO_PASSWORD:?}
+    volumes: [miniodata:/data]
+    networks: [backend]
+
+  # The postgres image carries the AWS CLI, so it doubles as the bucket maker.
+  minio-init:
+    image: ${PG_IMAGE:?}
+    entrypoint: [sh, -c]
+    command:
+      - |
+        for b in feedback-db feedback-uploads; do
+          n=0
+          until aws --endpoint-url http://minio:9000 s3api head-bucket --bucket "$$b" >/dev/null 2>&1 \
+                || aws --endpoint-url http://minio:9000 s3api create-bucket --bucket "$$b" >/dev/null 2>&1; do
+            n=$$((n + 1)); [ "$$n" -lt 90 ] || { echo "FATAL: could not create $$b"; exit 1; }
+            sleep 2
+          done
+          echo "bucket $$b ready"
+        done
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_USER:?}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_PASSWORD:?}
+      AWS_DEFAULT_REGION: us-east-1
+    depends_on: [minio]
+    restart: "no"
+    networks: [backend]
+
+  mailpit:
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    networks: [backend]
+
+  edge:
+    image: haproxy:3.2-alpine@sha256:5893840576071e6217cd52ebdcc14f454c6f7a631056fa6f4e0f40d3cac4215b
+    volumes: [./edge.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro]
+    ports: ["127.0.0.1:3000:3000"]
+    networks: [backend, edge]
+
+networks:
+  backend:
+    internal: true
+  edge: {}
+
+volumes:
+  pgdata:
+  miniodata:
+  apptmp:
