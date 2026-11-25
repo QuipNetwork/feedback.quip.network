@@ -32,6 +32,8 @@ Storj on a fixed interval and restores the most recent dump whenever it starts o
     deploy/app/                          App image: upstream Quackback on a fixed trust store
     deploy/postgres/                     Postgres image: Dockerfile, entrypoint, dump loop, restore hook
     deploy/trust-store/                  Build-time check that a CA bundle has dropped the eMudhra roots
+    deploy/local/                        Local rehearsal of the Flux app, and the weekly canary
+    .gitlab-ci.yml                       The weekly canary only: no push or merge-request pipelines
 
 ## Prerequisites
 
@@ -43,7 +45,8 @@ Storj on a fixed interval and restores the most recent dump whenever it starts o
 
 ## Build
 
-Both images are built and pushed by hand; this repository has no CI.
+Both images are built and pushed by hand. The only CI is the weekly canary (see
+[Local rehearsal and weekly canary](#local-rehearsal-and-weekly-canary)), which never pushes.
 
 ```bash
 docker login registry.gitlab.com
@@ -115,6 +118,12 @@ The `postgres` component takes `POSTGRES_*`, the Storj database-bucket keys, `S3
     Postgres then restores the newest dump, so anything written after that dump is lost.
   - After an upgrade, look at the rendered portal, not only its status codes. The 0.16 header
     change hid the whole header behind one of our custom CSS rules.
+  - Before an upgrade, `CANARY_VERSION=v<x.y.z> deploy/local/canary.sh` builds and boots that
+    release locally and runs the relocation drill; `deploy/local/up.sh` then serves it at
+    `http://localhost:3000` for the look at the rendered portal (empty, so CSS needs a test board).
+  - **In the same change, update feedback's `pinned` and `checked` in
+    `observe.quip.network/deploy/upstream-watch/pins.toml`.** The weekly upstream watch judges
+    new security advisories against that pin, so a stale one makes it silently wrong.
 - **Health:** `/api/health/ready` (0.16 and later) checks the database. `/api/health` answers 200
   even when the database is unreachable.
 - **Custom CSS** lives in the database: Admin → Settings → Portal → Customise → Advanced CSS. Edit
@@ -126,6 +135,39 @@ The `postgres` component takes `POSTGRES_*`, the Storj database-bucket keys, `S3
   `DUMP_KEEP`.
 - **Moderation.** Anonymous posts, and comments from outside the team, are held for review at
   `/admin/moderation`.
+
+## Local rehearsal and weekly canary
+
+`deploy/local/` runs the Flux app on one machine: the same component names, environment, memory
+limits and data paths as the spec, with SeaweedFS standing in for Storj (so the dump loop and
+restore-on-boot really run) and Mailpit for SMTP. App and Postgres have no egress.
+
+```bash
+NO_PUSH=1 ./deploy/app/build-and-push.sh
+deploy/local/up.sh                                  # board at http://localhost:3000
+docker compose -f deploy/local/compose.yaml down -v # wipe
+```
+
+`deploy/local/canary.sh` answers one question ahead of an upgrade: does Quackback's newest release
+still build with our overlay, boot the way the Flux app runs it, and survive a relocation? It
+pushes nothing.
+
+1. Asks GitHub for the newest release and uses `ghcr.io/quackbackio/quackback:<version>`.
+2. Points `deploy/app/Dockerfile` at it in its own checkout only and builds with `NO_PUSH`, so the
+   build script's asserts run.
+3. Boots `deploy/local` with that app image and the postgres image the deployed spec pins.
+4. Checks `/api/health/ready` from inside the app: status, database, migrations and workers ok.
+5. **Relocation drill:** waits for a dump of the migrated schema, destroys the Postgres volume and
+   starts Postgres again. Restore-on-boot must bring back the same tables and the app must come
+   back ready.
+
+It runs in CI on node07 from a weekly schedule (CI/CD → Schedules), or in any pipeline run with
+`CANARY=1`; GitLab mails a failed scheduled run to the schedule's owner. On a workstation: run it,
+then `deploy/local/canary.sh --down` and `git checkout deploy/app`.
+
+A boot on an empty database proves a release starts and migrates from scratch. It says nothing
+about migrating our real data, which is why upgrades still go one version at a time with a fresh
+dump first.
 
 ## License
 

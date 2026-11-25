@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# CI for feedback.quip.network: ONLY a weekly canary. The release path stays
+# the build-and-push scripts by hand (README: Build); nothing here builds for
+# release, and nothing here pushes.
+#
+#   canary  a scheduled pipeline (CI/CD > Schedules, weekly), or any pipeline
+#           run with CANARY=1. deploy/local/canary.sh builds our app image on
+#           Quackback's newest release, boots it in deploy/local against the
+#           postgres image the deployed spec pins, checks /api/health/ready,
+#           then runs a relocation drill (dump, destroy the volume, restore).
+#           GitLab mails a failed scheduled pipeline to the schedule's OWNER,
+#           so the schedule belongs to whoever should hear about it.
+#
+# Where it runs: node07, our Firecracker runner (project runner 59688693, tags
+# firecracker + amd64). Each job gets its own microVM with its own dockerd, and
+# the job container talks to it through the mounted socket -- so the
+# rehearsal's loopback-only edge port is on the VM, not here, and the canary
+# checks the app from inside the stack instead.
+#
+# This project is public, and so are its job logs: the canary prints image
+# names, versions and check results only. Its rehearsal secrets are random,
+# throwaway, and stay in deploy/local/.env (gitignored), which nothing prints.
+
+# No pipelines on pushes or merge requests: this repo has never had push CI,
+# and the canary is the only job.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CANARY == "1"
+
+canary:
+  image: docker:27-cli
+  tags: [firecracker, amd64]
+  timeout: 45m
+  variables:
+    # app 2 GiB + postgres 1.5 GiB + the stand-ins, plus the build.
+    FC_VCPUS: "4"
+    FC_MEM: "8192"
+  before_script:
+    - apk add --no-cache bash git python3 curl openssl
+    - docker info --format 'docker daemon ready (server {{.ServerVersion}})'
+  script:
+    - deploy/local/canary.sh
+  after_script:
+    # A fresh container without before_script: canary.sh needs bash.
+    - apk add --no-cache bash >/dev/null && deploy/local/canary.sh --down || true
